@@ -1,0 +1,7 @@
+sentence-transformers[image]>=6.1
+transformers>=5.20
+torch>=2.14
+numpy
+pillow
+pillow-heif
+pymupdf

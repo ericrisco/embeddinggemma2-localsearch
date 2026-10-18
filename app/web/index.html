@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Buscador</title>
+<style>
+:root{
+  --fondo:#0d0e11; --capa:#15161a; --capa2:#1c1d22; --borde:#2a2b31;
+  --texto:#ededf0; --suave:#9a9ca6; --tenue:#62646d;
+  --acento:#6f8cff; --acento2:#9db0ff; --ok:#3ddc84; --aviso:#ffb547;
+  --radio:16px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--fondo);color:var(--texto);font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+.oculto{display:none!important}
+
+/* ---------- barra superior ---------- */
+.barra{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:18px;padding:18px 32px;background:linear-gradient(var(--fondo) 75%,#0d0e1100)}
+.marca{display:flex;align-items:center;gap:10px;font-weight:650;letter-spacing:-.01em;white-space:nowrap}
+.marca i{width:28px;height:28px;border-radius:8px;background:conic-gradient(from 210deg,#6f8cff,#b48cff,#ff8cb4,#ffb547,#6f8cff);display:block;position:relative}
+.marca i::after{content:"";position:absolute;inset:7px;border-radius:50%;border:2.5px solid #0d0e11}
+.carpeta{display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:var(--capa);border:1px solid var(--borde);color:var(--suave);font-size:14px;max-width:340px}
+.carpeta b{color:var(--texto);font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.carpeta:hover{border-color:#3a3c44}
+.espacio{flex:1}
+.pastilla{display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:var(--capa);border:1px solid var(--borde);font-size:13.5px;color:var(--suave);white-space:nowrap}
+.pastilla .punto{width:8px;height:8px;border-radius:50%;background:var(--tenue)}
+.pastilla.sinred{color:var(--texto);border-color:#245c3c;background:#10251a}
+.pastilla.sinred .punto{background:var(--ok);box-shadow:0 0 10px var(--ok)}
+
+/* ---------- inicio ---------- */
+.centro{min-height:calc(100vh - 80px);display:grid;place-items:center;padding:24px}
+.hero{max-width:720px;text-align:center}
+.hero h1{font-size:54px;line-height:1.04;letter-spacing:-.035em;margin:0 0 18px;font-weight:700}
+.hero h1 span{background:linear-gradient(90deg,#9db0ff,#d2a8ff 50%,#ffb0c8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p{color:var(--suave);font-size:19px;margin:0 auto 36px;max-width:560px}
+.boton{display:inline-flex;align-items:center;gap:10px;padding:16px 28px;border-radius:14px;background:var(--texto);color:#0d0e11;font-weight:650;font-size:17px;transition:transform .12s,box-shadow .2s}
+.boton:hover{transform:translateY(-1px);box-shadow:0 8px 30px #6f8cff40}
+.boton.sec{background:var(--capa);color:var(--texto);border:1px solid var(--borde)}
+.botones{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.nota{margin-top:26px;color:var(--tenue);font-size:14px}
+
+/* ---------- indexando ---------- */
+.prog{width:min(760px,92vw)}
+.prog .titulo{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}
+.prog h2{margin:0;font-size:30px;letter-spacing:-.02em}
+.prog .pct{font-size:64px;font-weight:700;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+.pista{height:10px;border-radius:99px;background:var(--capa2);overflow:hidden}
+.pista div{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#6f8cff,#d2a8ff,#ffb0c8);transition:width .3s}
+.fase{margin-top:16px;color:var(--suave);display:flex;justify-content:space-between;gap:16px;font-size:15px}
+.fase .actual{color:var(--tenue);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%}
+.contadores{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:34px}
+.contadores div{background:var(--capa);border:1px solid var(--borde);border-radius:var(--radio);padding:16px 18px}
+.contadores b{display:block;font-size:30px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.contadores span{color:var(--suave);font-size:14px}
+
+/* ---------- buscador ---------- */
+.zona{padding:6px 32px 0;max-width:1600px;margin:0 auto}
+.caja{position:relative;display:flex;align-items:center;background:var(--capa);border:1.5px solid var(--borde);border-radius:20px;padding:6px 8px 6px 22px;transition:border-color .15s,box-shadow .2s}
+.caja:focus-within{border-color:#4c5cff;box-shadow:0 0 0 6px #6f8cff1f}
+.caja svg{flex:none;color:var(--suave)}
+.caja input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--texto);font-size:28px;padding:16px 16px;letter-spacing:-.01em}
+.caja input::placeholder{color:var(--tenue)}
+.caja .img{padding:12px 14px;border-radius:14px;color:var(--suave);font-size:14px;display:flex;gap:8px;align-items:center}
+.caja .img:hover{background:var(--capa2);color:var(--texto)}
+.filtros{display:flex;gap:8px;margin:16px 0 4px;align-items:center;flex-wrap:wrap}
+.chip{padding:8px 16px;border-radius:999px;border:1px solid var(--borde);color:var(--suave);font-size:14.5px}
+.chip.on{background:var(--texto);color:#0d0e11;border-color:var(--texto);font-weight:600}
+.info{margin-left:auto;color:var(--tenue);font-size:14px;font-variant-numeric:tabular-nums}
+.consulta-img{display:flex;align-items:center;gap:12px;margin-top:14px;color:var(--suave);font-size:15px}
+.consulta-img img{width:56px;height:56px;object-fit:cover;border-radius:10px;border:1px solid var(--borde)}
+
+.rejilla{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:18px;padding:18px 32px 60px;max-width:1600px;margin:0 auto}
+.tarjeta{background:var(--capa);border:1px solid var(--borde);border-radius:var(--radio);overflow:hidden;cursor:pointer;transition:transform .15s,border-color .15s;animation:entra .35s both;display:flex;flex-direction:column}
+.tarjeta:hover{transform:translateY(-3px);border-color:#3c3e47}
+.tarjeta.primera{border-color:#6f8cff;box-shadow:0 0 0 1px #6f8cff,0 14px 50px #6f8cff30}
+@keyframes entra{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.foto{position:relative;aspect-ratio:4/3;background:var(--capa2);overflow:hidden}
+.foto img{width:100%;height:100%;object-fit:cover;display:block}
+.tarjeta.pdf .foto{background:#e9e9ec}
+.tarjeta.pdf .foto img{object-fit:cover;object-position:top}
+.tarjeta.captura .foto img{object-position:top left}
+.etq{position:absolute;top:10px;left:10px;display:flex;gap:6px}
+.etq span{padding:4px 9px;border-radius:8px;font-size:11.5px;font-weight:700;letter-spacing:.04em;background:#0d0e11d9;backdrop-filter:blur(6px);color:#fff}
+.etq .t-pdf{background:#e5484dee}
+.etq .t-captura{background:#6f8ccfee}
+.etq .t-foto{background:#2c9a5fee}
+.pie{padding:12px 14px 14px;display:flex;flex-direction:column;gap:6px;min-height:52px}
+.nombre{font-size:13.5px;color:var(--suave);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;justify-content:space-between;gap:10px}
+.nombre .sim{display:none;color:var(--acento2);font-variant-numeric:tabular-nums}
+body.puntos .nombre .sim{display:inline}
+.frag{font-size:13.5px;color:#c9cad1;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.frag mark{background:#6f8cff38;color:#fff;border-radius:3px;padding:0 2px}
+.por{font-size:12px;color:var(--tenue);margin-top:auto}
+.vacio{grid-column:1/-1;text-align:center;color:var(--tenue);padding:80px 0;font-size:17px}
+
+/* ---------- visor ---------- */
+.velo{position:fixed;inset:0;background:#000c;backdrop-filter:blur(8px);z-index:50;display:grid;place-items:center;padding:28px;animation:aparece .2s}
+@keyframes aparece{from{opacity:0}}
+.visor{width:min(1200px,96vw);height:min(860px,92vh);background:var(--capa);border:1px solid var(--borde);border-radius:20px;display:grid;grid-template-columns:1fr 320px;overflow:hidden}
+.visor .lienzo{background:#08090b;display:grid;place-items:center;min-height:0}
+.visor .lienzo img{max-width:100%;max-height:100%;object-fit:contain}
+.visor .lienzo iframe{width:100%;height:100%;border:0;background:#fff}
+.lado{padding:24px;display:flex;flex-direction:column;gap:14px;border-left:1px solid var(--borde);min-height:0;overflow:auto}
+.lado h3{margin:0;font-size:18px;word-break:break-word}
+.lado .ruta{color:var(--tenue);font-size:13px;word-break:break-all}
+.lado .bloque{background:var(--capa2);border-radius:12px;padding:12px 14px;font-size:14px;color:#c9cad1}
+.lado .acciones{display:flex;flex-direction:column;gap:8px;margin-top:auto}
+.lado .acciones button{padding:12px;border-radius:12px;background:var(--capa2);border:1px solid var(--borde);text-align:left}
+.lado .acciones button:hover{border-color:#4a4c56}
+.lado .acciones .prim{background:var(--texto);color:#0d0e11;font-weight:600;border:0}
+
+/* ---------- soltar imagen ---------- */
+.soltar{position:fixed;inset:0;z-index:60;background:#0d0e11e6;display:grid;place-items:center;pointer-events:none}
+.soltar div{border:2px dashed #6f8cff;border-radius:28px;padding:70px 90px;font-size:28px;font-weight:600;color:#c9d3ff}
+</style>
+</head>
+<body>
+
+<header class="barra">
+  <div class="marca"><i></i>Buscador</div>
+  <button class="carpeta oculto" id="btnCarpeta" title="Cambiar de carpeta">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+    <b id="nomCarpeta"></b>
+  </button>
+  <div class="espacio"></div>
+  <div class="pastilla" id="pModelo"><span class="punto"></span><span>Cargando modelo…</span></div>
+  <div class="pastilla" id="pRed"><span class="punto"></span><span>Comprobando conexión…</span></div>
+</header>
+
+<!-- inicio -->
+<section class="centro" id="vInicio">
+  <div class="hero">
+    <h1>Busca en tus archivos <span>por lo que sale dentro</span></h1>
+    <p>Elige una carpeta con fotos, capturas y PDFs. Se indexa en este ordenador y después buscas escribiendo lo que recuerdas, aunque no sepas cómo se llama el archivo.</p>
+    <div class="botones">
+      <button class="boton" id="btnElegir">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        Elegir carpeta
+      </button>
+      <button class="boton sec oculto" id="btnSeguir"></button>
+    </div>
+    <div class="nota" id="notaInicio">EmbeddingGemma 2 · texto e imagen en el mismo espacio</div>
+  </div>
+</section>
+
+<!-- confirmar / indexando -->
+<section class="centro oculto" id="vIndexar">
+  <div class="prog">
+    <div class="titulo"><h2 id="tIndexar">Indexando</h2><div class="pct" id="pct">0 %</div></div>
+    <div class="pista"><div id="barra"></div></div>
+    <div class="fase"><span id="fase">Preparando…</span><span class="actual" id="actual"></span></div>
+    <div class="contadores">
+      <div><b id="cFotos">0</b><span>imágenes</span></div>
+      <div><b id="cPdfs">0</b><span>PDFs</span></div>
+      <div><b id="cPags">0</b><span>páginas</span></div>
+      <div><b id="cTiempo">0 s</b><span>tiempo</span></div>
+    </div>
+    <div class="botones oculto" id="bConfirmar" style="margin-top:34px">
+      <button class="boton" id="btnIndexar">Indexar</button>
+      <button class="boton sec" id="btnOtra">Elegir otra</button>
+    </div>
+  </div>
+</section>
+
+<!-- buscador -->
+<section class="oculto" id="vBuscar">
+  <div class="zona">
+    <form class="caja" id="form">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" placeholder="Escribe lo que recuerdas…" autocomplete="off" spellcheck="false">
+      <button type="button" class="img" id="btnImg" title="Buscar con una imagen">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>
+        Con una imagen
+      </button>
+      <input type="file" id="fichero" accept="image/*" class="oculto">
+    </form>
+    <div class="consulta-img oculto" id="consultaImg"><img id="consultaImgSrc" alt=""><span id="consultaImgTxt"></span></div>
+    <div class="filtros">
+      <button class="chip on" data-tipo="todo">Todo</button>
+      <button class="chip" data-tipo="foto">Fotos</button>
+      <button class="chip" data-tipo="captura">Capturas</button>
+      <button class="chip" data-tipo="pdf">PDFs</button>
+      <span class="info" id="info"></span>
+    </div>
+  </div>
+  <main class="rejilla" id="rejilla"></main>
+</section>
+
+<div class="velo oculto" id="velo">
+  <div class="visor" id="visor">
+    <div class="lienzo" id="lienzo"></div>
+    <aside class="lado">
+      <h3 id="vNombre"></h3>
+      <div class="ruta" id="vRuta"></div>
+      <div class="bloque oculto" id="vFrag"></div>
+      <div class="por" id="vPor"></div>
+      <div class="acciones">
+        <button class="prim" id="vParecidas">Buscar parecidas</button>
+        <button id="vAbrir">Abrir el archivo</button>
+        <button id="vMostrar">Mostrar en el Finder</button>
+        <button id="vCerrar">Cerrar  ·  Esc</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="soltar oculto" id="soltar"><div>Suelta la imagen para buscar parecidas</div></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const vistas = {inicio: $('#vInicio'), indexar: $('#vIndexar'), buscar: $('#vBuscar')};
+let estado = {}, tipo = 'todo', ultima = null, carpetaPendiente = null, resultados = [], abierto = null;
+
+function vista(n){ for (const k in vistas) vistas[k].classList.toggle('oculto', k !== n); }
+const fmtT = s => s < 60 ? `${Math.round(s)} s` : `${Math.floor(s/60)} min ${String(Math.round(s%60)).padStart(2,'0')} s`;
+const sinAcentos = s => s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function api(url, opts){ const r = await fetch(url, opts); const d = await r.json(); if (!r.ok) throw new Error(d.error || r.status); return d; }
+
+// ---------------- estado (cada segundo)
+async function sondear(){
+  try { estado = await api('/estado'); } catch(e){ return; }
+  const m = estado.modelo, pm = $('#pModelo');
+  pm.querySelector('span:last-child').textContent =
+    m === 'listo' ? `EmbeddingGemma 2 · ${estado.dispositivo.startsWith('mps') ? 'GPU del Mac' : estado.dispositivo}` :
+    m === 'descargando' ? 'Descargando modelo (solo la primera vez)…' :
+    m === 'error' ? 'Error al cargar el modelo' : 'Cargando modelo…';
+  pm.querySelector('.punto').style.background = m === 'listo' ? 'var(--acento)' : m === 'error' ? '#e5484d' : 'var(--aviso)';
+  const pr = $('#pRed');
+  pr.classList.toggle('sinred', !estado.red);
+  pr.querySelector('span:last-child').textContent = estado.red ? 'Con conexión' : 'Sin conexión · todo en este Mac';
+
+  const p = estado.progreso || {};
+  if (p.activo){ pintarProgreso(p); vista('indexar'); }
+  else if (p.fase === 'Listo' && vistas.indexar.offsetParent && !carpetaPendiente){ pintarProgreso(p); setTimeout(entrarBuscador, 1400); estado.progreso.fase = ''; }
+  else if (p.fase === 'Error'){ $('#fase').textContent = 'Error: ' + p.error; }
+
+  const ix = estado.indice;
+  $('#btnCarpeta').classList.toggle('oculto', !ix);
+  if (ix){ $('#nomCarpeta').textContent = ix.nombre; }
+  const bs = $('#btnSeguir');
+  bs.classList.toggle('oculto', !ix);
+  if (ix) bs.textContent = `Seguir con «${ix.nombre}»`;
+}
+
+function pintarProgreso(p){
+  const pct = p.total ? Math.min(100, Math.round(p.hechos / p.total * 100)) : 0;
+  $('#tIndexar').textContent = p.fase === 'Listo' ? 'Listo' : 'Indexando';
+  $('#pct').textContent = pct + ' %';
+  $('#barra').style.width = pct + '%';
+  $('#fase').textContent = p.fase === 'Listo' ? `Listo en ${fmtT(p.segundos || 0)}` : (p.fase || '') + '…';
+  $('#actual').textContent = p.actual || '';
+  $('#cFotos').textContent = p.fotos ?? 0;
+  $('#cPdfs').textContent = p.pdfs ?? 0;
+  $('#cPags').textContent = p.paginas ?? 0;
+  $('#cTiempo').textContent = fmtT(p.segundos || 0);
+  $('#bConfirmar').classList.add('oculto');
+}
+
+// ---------------- elegir e indexar
+async function elegir(){
+  const d = await api('/elegir', {method:'POST'});
+  if (d.manual) d.carpeta = prompt('Escribe la ruta completa de la carpeta que quieres indexar:');
+  if (!d.carpeta) return;
+  carpetaPendiente = d.carpeta;
+  vista('indexar');
+  const nombre = d.carpeta.split('/').pop();
+  $('#tIndexar').textContent = nombre;
+  $('#pct').textContent = '';
+  $('#barra').style.width = '0';
+  $('#fase').textContent = d.carpeta;
+  $('#actual').textContent = '';
+  ['#cFotos','#cPdfs','#cPags'].forEach(s => $(s).textContent = '–');
+  $('#cTiempo').textContent = '–';
+  $('#bConfirmar').classList.remove('oculto');
+}
+async function indexar(rehacer){
+  const carpeta = carpetaPendiente; carpetaPendiente = null;
+  try {
+    const d = await api('/indexar', {method:'POST', body: JSON.stringify({carpeta, rehacer: true})});
+    if (d.ya_estaba) entrarBuscador();
+  } catch(e){ $('#fase').textContent = e.message; carpetaPendiente = carpeta; }
+}
+$('#btnElegir').onclick = elegir;
+$('#btnOtra').onclick = elegir;
+$('#btnCarpeta').onclick = elegir;
+$('#btnIndexar').onclick = () => indexar(true);
+$('#btnSeguir').onclick = entrarBuscador;
+
+function entrarBuscador(){
+  vista('buscar');
+  $('#q').focus();
+  if (!resultados.length) $('#rejilla').innerHTML = `<div class="vacio">${estado.indice ? resumenIndice(estado.indice.ensayo) : ''}</div>`;
+}
+function resumenIndice(e){
+  if (!e || !e.fecha) return 'Escribe arriba lo que recuerdas';
+  const imgs = (e.fotos||0) + (e.capturas||0);
+  return `${imgs} imágenes y ${e.pdfs} PDFs (${e.paginas} páginas) indexados en ${fmtT(e.segundos)} · ${e.vectores} vectores de ${e.dimensiones} números`;
+}
+
+// ---------------- buscar
+async function buscar(){
+  const q = $('#q').value.trim();
+  if (!q) return;
+  $('#consultaImg').classList.add('oculto');
+  ultima = {modo:'texto', q};
+  lanzar(`/buscar?q=${encodeURIComponent(q)}&tipo=${tipo}&n=24`, `«${q}»`);
+}
+async function lanzar(url, etiqueta, opts){
+  $('#info').textContent = 'Buscando…';
+  try {
+    const d = await api(url, opts);
+    resultados = d.resultados;
+    pintar(d.resultados);
+    $('#info').textContent = `${d.resultados.length} resultados · ${d.ms} ms`;
+  } catch(e){ $('#info').textContent = e.message; }
+}
+function resaltar(texto){
+  if (!ultima || ultima.modo !== 'texto') return esc(texto);
+  const pal = sinAcentos(ultima.q).split(/[^a-z0-9ñ]+/).filter(p => p.length >= 4);
+  if (!pal.length) return esc(texto);
+  const base = sinAcentos(texto);
+  const marcas = new Array(texto.length).fill(false);
+  for (const p of pal){ let i = base.indexOf(p); while (i >= 0){ for (let k=i;k<i+p.length;k++) marcas[k]=true; i = base.indexOf(p, i+1);} }
+  let out = '', dentro = false;
+  for (let i=0;i<texto.length;i++){
+    if (marcas[i] && !dentro){ out += '<mark>'; dentro = true; }
+    if (!marcas[i] && dentro){ out += '</mark>'; dentro = false; }
+    out += esc(texto[i]);
+  }
+  return out + (dentro ? '</mark>' : '');
+}
+function recorte(t){
+  t = t.replace(/\s+/g,' ').trim();
+  if (!ultima || ultima.modo !== 'texto') return t.slice(0,220);
+  const base = sinAcentos(t);
+  const pal = sinAcentos(ultima.q).split(/[^a-z0-9ñ]+/).filter(p => p.length >= 4);
+  // ventana de 220 caracteres con más palabras de la búsqueda
+  let mejor = 0, mejorN = -1;
+  for (let i = 0; i < Math.max(1, base.length - 120); i += 20){
+    const v = base.slice(i, i + 220); const n = pal.filter(p => v.includes(p)).length;
+    if (n > mejorN){ mejorN = n; mejor = i; }
+  }
+  return (mejor > 0 ? '…' : '') + t.slice(mejor, mejor + 220);
+}
+function etiqueta(r){
+  if (r.tipo === 'pdf') return `<span class="t-pdf">PDF</span>${r.paginas > 1 ? `<span>pág. ${r.pagina}/${r.paginas}</span>` : ''}`;
+  if (r.tipo === 'captura') return `<span class="t-captura">CAPTURA</span>`;
+  return `<span class="t-foto">FOTO</span>`;
+}
+function pintar(lista){
+  const g = $('#rejilla');
+  if (!lista.length){ g.innerHTML = '<div class="vacio">Nada por aquí</div>'; return; }
+  g.innerHTML = lista.map((r,k) => `
+    <article class="tarjeta ${r.tipo} ${k===0?'primera':''}" data-k="${k}" style="animation-delay:${Math.min(k,12)*25}ms">
+      <div class="foto"><img src="/mini/${r.id}" loading="lazy" alt=""><div class="etq">${etiqueta(r)}</div></div>
+      <div class="pie">
+        <div class="nombre"><span>${esc(r.nombre)}</span><span class="sim">${r.similitud.toFixed(2)}</span></div>
+        ${r.fragmento ? `<div class="frag">${resaltar(recorte(r.fragmento))}</div>` : ''}
+        <div class="por">${r.por === 'texto' ? 'Por el texto' : 'Por lo que se ve'}</div>
+      </div>
+    </article>`).join('');
+  g.querySelectorAll('.tarjeta').forEach(t => t.onclick = () => abrir(resultados[+t.dataset.k]));
+}
+
+$('#form').onsubmit = e => { e.preventDefault(); buscar(); };
+document.querySelectorAll('.chip').forEach(c => c.onclick = () => {
+  document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c));
+  tipo = c.dataset.tipo;
+  if (!ultima) return;
+  if (ultima.modo === 'texto') buscar();
+  else if (ultima.modo === 'parecidas') parecidas(ultima.id, ultima.nombre);
+  else if (ultima.modo === 'imagen') buscarConImagen(ultima.archivo);
+});
+
+// ---------------- con una imagen
+async function buscarConImagen(archivo){
+  ultima = {modo:'imagen', archivo};
+  $('#consultaImg').classList.remove('oculto');
+  $('#consultaImgSrc').src = URL.createObjectURL(archivo);
+  $('#consultaImgTxt').textContent = `Parecidas a ${archivo.name}`;
+  $('#q').value = '';
+  lanzar(`/buscar-imagen?tipo=${tipo}`, archivo.name, {method:'POST', body: archivo});
+}
+function parecidas(id, nombre){
+  ultima = {modo:'parecidas', id, nombre};
+  $('#consultaImg').classList.remove('oculto');
+  $('#consultaImgSrc').src = `/mini/${id}`;
+  $('#consultaImgTxt').textContent = `Parecidas a ${nombre}`;
+  $('#q').value = '';
+  lanzar(`/parecidas?id=${id}&tipo=${tipo}&n=24`, nombre);
+}
+$('#btnImg').onclick = () => $('#fichero').click();
+$('#fichero').onchange = e => { const f = e.target.files[0]; if (f) buscarConImagen(f); e.target.value=''; };
+let arrastres = 0;
+addEventListener('dragenter', e => { if (vistas.buscar.offsetParent){ arrastres++; $('#soltar').classList.remove('oculto'); } });
+addEventListener('dragleave', () => { if (--arrastres <= 0){ arrastres = 0; $('#soltar').classList.add('oculto'); } });
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', e => {
+  e.preventDefault(); arrastres = 0; $('#soltar').classList.add('oculto');
+  const f = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
+  if (f && vistas.buscar.offsetParent) buscarConImagen(f);
+});
+
+// ---------------- visor
+function abrir(r){
+  abierto = r;
+  const l = $('#lienzo');
+  l.innerHTML = r.tipo === 'pdf'
+    ? `<iframe src="/archivo/${r.id}#page=${r.pagina}&view=FitH&toolbar=0"></iframe>`
+    : `<img src="/archivo/${r.id}" alt="">`;
+  $('#vNombre').textContent = r.nombre + (r.tipo === 'pdf' ? ` · página ${r.pagina}` : '');
+  $('#vRuta').textContent = r.rel;
+  const fr = $('#vFrag');
+  fr.classList.toggle('oculto', !r.fragmento);
+  if (r.fragmento) fr.innerHTML = resaltar(r.fragmento.replace(/\s+/g,' ').slice(0,600));
+  $('#vPor').textContent = r.por === 'texto' ? 'Encontrado por el texto de la página' : (r.tipo === 'pdf' ? 'Encontrado por cómo se ve la página' : 'Encontrado por lo que se ve en la imagen');
+  $('#velo').classList.remove('oculto');
+}
+function cerrar(){ $('#velo').classList.add('oculto'); $('#lienzo').innerHTML=''; abierto = null; }
+$('#vCerrar').onclick = cerrar;
+$('#velo').onclick = e => { if (e.target.id === 'velo') cerrar(); };
+$('#vParecidas').onclick = () => { const r = abierto; cerrar(); parecidas(r.id, r.nombre + (r.tipo==='pdf' ? ` (pág. ${r.pagina})` : '')); };
+$('#vAbrir').onclick = () => api('/abrir', {method:'POST', body: JSON.stringify({id: abierto.id})});
+$('#vMostrar').onclick = () => api('/mostrar', {method:'POST', body: JSON.stringify({id: abierto.id})});
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') cerrar();
+  if (e.key === 's' && document.activeElement.id !== 'q') document.body.classList.toggle('puntos');
+  if (e.key === '/' && document.activeElement.id !== 'q' && vistas.buscar.offsetParent){ e.preventDefault(); $('#q').focus(); $('#q').select(); }
+});
+
+// ?q=… abre directamente una búsqueda (útil para preparar tomas)
+sondear().then(() => {
+  const q = new URLSearchParams(location.search).get('q');
+  if (q && estado.indice){ entrarBuscador(); $('#q').value = q; buscar(); }
+});
+setInterval(sondear, 1000);
+</script>
+</body>
+</html>

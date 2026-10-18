@@ -1,0 +1,10 @@
+# entorno y caché del modelo
+app/.venv/
+app/.cache-hf/
+app/.chrome-app/
+app/indices/
+__pycache__/
+*.pyc
+.DS_Store
+# material de trabajo local
+_trabajo/
