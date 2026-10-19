@@ -13,7 +13,7 @@ import requests
 
 DESTINO = Path(__file__).resolve().parent.parent / "carpeta-demo" / "Fotos"
 PROCEDENCIA = Path(__file__).resolve().parent / "procedencia_openverse.json"
-UA = {"User-Agent": "demo-buscador-local/1.0 (github.com/ericrisco/buscador-local)"}
+UA = {"User-Agent": "embeddinggemma-buscador/1.0 (github.com/ericrisco/embeddinggemma-buscador)"}
 API = "https://commons.wikimedia.org/w/api.php"
 
 TEMAS = {

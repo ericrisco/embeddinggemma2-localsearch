@@ -1,4 +1,4 @@
-# Buscador local de fotos y PDFs con EmbeddingGemma 2
+# EmbeddingGemma Buscador: busca en tus fotos y PDFs por lo que sale dentro
 
 Eliges una carpeta, se indexa en tu ordenador y buscas escribiendo **lo que sale dentro** de las fotos, las capturas de pantalla y los PDFs. No importa cómo se llamen los archivos.
 
@@ -19,8 +19,8 @@ El repo incluye una carpeta de prueba con 303 fotos, 15 capturas y 14 PDFs para 
 ## Instalación
 
 ```bash
-git clone https://github.com/ericrisco/buscador-local.git
-cd buscador-local/app
+git clone https://github.com/ericrisco/embeddinggemma-buscador.git
+cd embeddinggemma-buscador/app
 
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
