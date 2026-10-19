@@ -1,10 +1,10 @@
-# entorno y caché del modelo
+# environment and model cache
 app/.venv/
 app/.cache-hf/
 app/.chrome-app/
-app/indices/
+app/indexes/
 __pycache__/
 *.pyc
 .DS_Store
-# material de trabajo local
+# local scratch material
 _trabajo/
