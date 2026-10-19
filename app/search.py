@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""EmbeddingGemma Search: pick a folder of photos and PDFs, index it with
+"""EmbeddingGemma 2 Local Search: pick a folder of photos and PDFs, index it with
 EmbeddingGemma 2, and search by what is *inside* the files, mixing text and
 images in a single result list.
 
@@ -89,7 +89,7 @@ class Model:
 
         from PIL import Image
 
-        path = Path(tempfile.gettempdir()) / "embeddinggemma_search_warmup.jpg"
+        path = Path(tempfile.gettempdir()) / "embeddinggemma2_localsearch_warmup.jpg"
         Image.new("RGB", (256, 256), (120, 140, 160)).save(path)
         for text in ("warming up", "a slightly longer test query to warm up the model"):
             self._m.encode(text, prompt_name="SearchQuery")
@@ -603,7 +603,7 @@ def main() -> None:
     # Bound to 127.0.0.1 only: not reachable from other machines on the network.
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(model, index))
     url = f"http://127.0.0.1:{args.port}"
-    print(f"EmbeddingGemma Search running at {url}  (Ctrl+C to stop)", flush=True)
+    print(f"EmbeddingGemma 2 Local Search running at {url}  (Ctrl+C to stop)", flush=True)
     if not args.no_window:
         open_window(url)
     try:

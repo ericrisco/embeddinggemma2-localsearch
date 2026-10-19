@@ -1,4 +1,4 @@
-# EmbeddingGemma Search
+# EmbeddingGemma 2 Local Search
 
 **Search your photos, screenshots and PDFs by what's *inside* them — locally, offline, with [EmbeddingGemma 2](https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2).**
 
@@ -62,8 +62,8 @@ Highlights:
 ## Quick start
 
 ```bash
-git clone https://github.com/ericrisco/embeddinggemma-buscador.git
-cd embeddinggemma-buscador/app
+git clone https://github.com/ericrisco/embeddinggemma2-localsearch.git
+cd embeddinggemma2-localsearch/app
 python3 -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python search.py
@@ -93,8 +93,8 @@ No Hugging Face account or token is needed: `google/embeddinggemma-2` downloads 
 ### macOS / Linux
 
 ```bash
-git clone https://github.com/ericrisco/embeddinggemma-buscador.git
-cd embeddinggemma-buscador/app
+git clone https://github.com/ericrisco/embeddinggemma2-localsearch.git
+cd embeddinggemma2-localsearch/app
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -105,8 +105,8 @@ On Linux, the native folder picker needs Tk (`sudo apt install python3-tk` on De
 ### Windows
 
 ```powershell
-git clone https://github.com/ericrisco/embeddinggemma-buscador.git
-cd embeddinggemma-buscador\app
+git clone https://github.com/ericrisco/embeddinggemma2-localsearch.git
+cd embeddinggemma2-localsearch\app
 py -3.11 -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt

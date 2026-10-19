@@ -23,7 +23,7 @@ import requests
 HERE = Path(__file__).resolve().parent
 DEST = HERE.parent / "demo-folder" / "Photos"
 PROVENANCE = HERE / "provenance_openverse.json"
-UA = {"User-Agent": "embeddinggemma-search/1.0 (github.com/ericrisco/embeddinggemma-buscador)"}
+UA = {"User-Agent": "embeddinggemma2-localsearch/1.0 (github.com/ericrisco/embeddinggemma2-localsearch)"}
 
 # query → how many photos
 TOPICS = {
