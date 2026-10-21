@@ -77,7 +77,7 @@ Then **Choose folder** → pick `demo-folder` → **Index** → wait about 3 min
 
 | | |
 |---|---|
-| **OS** | Developed and tested on macOS (Apple Silicon). The code includes the Windows and Linux paths (folder picker, opening files, browser), but they haven't been tested end to end |
+| **OS** | Developed and tested on macOS (Apple Silicon). Also tested on Windows 11 with an NVIDIA GPU (indexing, search, the API). Linux paths are in the code but haven't been tested end to end |
 | **Python** | 3.11 (tested). 3.12 and 3.13 should work if PyTorch has wheels for your platform |
 | **Disk** | ~3 GB: ~1.4 GB for the model and ~1–1.5 GB for PyTorch and the other dependencies |
 | **RAM** | ~1 GB peak while indexing the demo folder on a Mac. Plan for 4 GB+ free |
@@ -151,7 +151,7 @@ The first time, the top-right badge shows *Downloading model (first run only)…
 - images: `.jpg .jpeg .png .webp .heic .heif .bmp .gif .tif .tiff`
 - PDFs: `.pdf`
 
-Hidden files are skipped. Click **Index** and you'll see a live progress bar, the file being processed, counters (images, PDFs, pages) and the elapsed time. The index is saved, so next time you can click **Continue with "…"** and search right away. Pick the same folder again and click **Index** to rebuild it after adding files.
+Hidden files and folders (`.git`, `.venv`…) and `node_modules` are skipped. Click **Index** and you'll see a live progress bar, the file being processed, counters (images, PDFs, pages) and the elapsed time. The index is saved, so next time you can click **Continue with "…"** and search right away. Pick the same folder again and click **Index** to update it after adding files: only new or changed files are embedded again (a file counts as unchanged if its size and modification time are the same), and deleted ones drop out.
 
 ### 3. Search
 
@@ -291,8 +291,9 @@ On the demo folder that's 333 items (303 photos + 15 screenshots + 15 PDF pages)
    ```
 
    This asks "how unusually close is this row, compared with the others of its kind?", and those z-scores can be compared across modalities.
-4. Each item keeps its **best** row (highest z). That's what *Matched by how it looks* / *Matched by its text* on the card reports.
-5. For PDF pages, the **snippet** is always the text chunk most similar to the query, even when the page won through its image. In the browser, the 220-character window with the most query words is shown and highlighted (case- and accent-insensitive).
+4. **Exact codes.** Embeddings are vague about identifiers like `NR-2026-0931` or a licence plate. Words of a text query that look like codes (3+ characters with a digit) get a fixed bonus (`CODE_BOOST`, +5 z) on every text chunk that contains them verbatim. A code found in more than 5% of the chunks (a year like `2026`) is ignored.
+5. Each item keeps its **best** row (highest z). That's what *Matched by how it looks* / *Matched by its text* on the card reports.
+6. For PDF pages, the **snippet** is always the text chunk most similar to the query, even when the page won through its image. In the browser, the 220-character window with the most query words is shown and highlighted (case- and accent-insensitive).
 6. Results are sorted by z and the top 24 are returned. Filters drop other types before the cut.
 
 **Find similar** reuses the item's stored image vector as the query and excludes the item itself. **Search with an image** downscales the uploaded picture the same way as during indexing and embeds it.
@@ -330,6 +331,8 @@ Measured on a MacBook Pro with **M4 Pro and 24 GB**, Apple GPU (MPS), with the m
 | Find similar | < 5 ms (the vector is already stored) |
 | Model download, first run only | ~1.4 GB |
 
+On Windows 11 with an **RTX 5070 Ti (16 GB)**, CUDA, PyTorch 2.14: indexing the demo folder takes **~30 s** (1.5 GB peak VRAM) and a text search **~89 ms** median. Updating the index when nothing changed takes **0.4 s**.
+
 With other GPU-heavy work running on the same machine (a video render), indexing took about three times longer. On CPU, expect indexing to be much slower. Searching stays fast, because a single query is cheap.
 
 ---
@@ -337,7 +340,7 @@ With other GPU-heavy work running on the same machine (a video render), indexing
 ## Privacy and offline use
 
 - **Your files never leave your computer.** Thumbnails, vectors and the index are written to `app/indexes/`.
-- The server binds to **`127.0.0.1` only**, so other devices on your network can't reach it.
+- The server binds to **`127.0.0.1` only**, so other devices on your network can't reach it. It also rejects requests with a foreign `Host` or `Origin` header, so other websites open in your browser can't call the API (cross-site requests, DNS rebinding).
 - After the first download, the model loads with `HF_HUB_OFFLINE=1`: Hugging Face is never contacted again.
 - The only network call the app makes is for the connection badge: every few seconds it tries to open a socket to `1.1.1.1:53` with a 0.8 s timeout. No data is sent. Remove `online()` from `search.py` if you don't want it.
 - The UI loads nothing from the internet: no CDNs, fonts or analytics.
@@ -352,7 +355,7 @@ Each indexed folder gets its own directory, `app/indexes/<first 12 hex chars of 
 
 ```
 vectors.npy     float32 array, shape (rows, 768), L2-normalised
-index.json      { "folder", "items", "rows", "stats" }
+index.json      { "folder", "settings", "items", "rows", "stats" }
 thumbs/         00000.jpg, 00001.jpg … one per item (≤ 1024 px)
 ```
 
@@ -377,7 +380,7 @@ thumbs/         00000.jpg, 00001.jpg … one per item (≤ 1024 px)
 }
 ```
 
-`type` is `photo`, `screenshot` or `pdf`; `width`/`height` are the original image size or the rendered page size. Row `i` of `index.json` corresponds to row `i` of `vectors.npy`. `app/indexes/last.txt` remembers the last folder. Delete `app/indexes/` to forget everything.
+`type` is `photo`, `screenshot` or `pdf`; `width`/`height` are the original image size or the rendered page size. `size`/`mtime` (bytes, nanoseconds) identify unchanged files when re-indexing; `settings` records `MODEL_ID`, `IMAGE_SIDE`, `PAGE_DPI`, `CHUNK` and `OVERLAP`, and if any of them changes nothing is reused. Row `i` of `index.json` corresponds to row `i` of `vectors.npy`. `app/indexes/last.txt` remembers the last folder. Delete `app/indexes/` to forget everything.
 
 ---
 
@@ -415,6 +418,8 @@ Constants at the top of `app/search.py`:
 | `IMAGE_SIDE` | 1024 | Images are downscaled to this before embedding |
 | `PAGE_DPI` | 110 | PDF page render resolution |
 | `CHUNK` / `OVERLAP` | 700 / 120 | PDF text chunking, in characters |
+| `SKIP_DIRS` | `node_modules`, `__pycache__` | Folders never indexed, besides hidden ones |
+| `CODE_BOOST` | 5.0 | z-score bonus for a text chunk that contains a code from the query |
 
 Environment: `HF_HOME` (model cache location, default `app/.cache-hf`). Flags: `--port`, `--no-window`.
 
@@ -422,7 +427,7 @@ Environment: `HF_HOME` (model cache location, default `app/.cache-hf`). Flags: `
 
 ## Limitations
 
-- It's a **demo**, not a product: it doesn't watch the folder. Re-index after adding files.
+- It's a **demo**, not a product: it doesn't watch the folder. Click **Index** again after adding files (only the changes are embedded).
 - Brute-force search keeps every vector in RAM. That's fine for thousands of items; for hundreds of thousands, use an approximate index (FAISS, HNSW).
 - Scores are **similarity, not probability**. Ambiguous or nuanced queries can miss, and the model card notes that quality varies across languages.
 - Long PDFs take time: every page is rendered and embedded (~0.5 s per page on an M4 Pro).

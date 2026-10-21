@@ -13,16 +13,19 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
 import threading
 import time
 import traceback
+import unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -40,6 +43,8 @@ IMAGE_SIDE = 1024   # images are downscaled to this before embedding (and for th
 PAGE_DPI = 110      # PDF pages are rendered at this resolution
 CHUNK = 700         # characters per PDF text chunk
 OVERLAP = 120       # overlap between consecutive chunks
+SKIP_DIRS = {"node_modules", "__pycache__"}  # never indexed, like hidden folders (.git, .venv…)
+CODE_BOOST = 5.0    # z-score bonus for a text chunk containing a code from the query verbatim
 
 
 # ------------------------------------------------------------------ model
@@ -55,6 +60,8 @@ class Model:
         self.load_seconds = 0.0
         self._m = None
         self._lock = threading.Lock()
+        # Changing the filter re-runs the same query: don't embed it again.
+        self.embed_query = functools.lru_cache(maxsize=256)(self._embed_query)
         threading.Thread(target=self._load, daemon=True).start()
 
     def _load(self) -> None:
@@ -109,7 +116,7 @@ class Model:
             return self._m.encode(texts, prompt_name="Document", batch_size=batch,
                                   normalize_embeddings=True, convert_to_numpy=True)
 
-    def embed_query(self, text: str):
+    def _embed_query(self, text: str):
         with self._lock:
             return self._m.encode(text, prompt_name="SearchQuery",
                                   normalize_embeddings=True, convert_to_numpy=True)
@@ -138,6 +145,32 @@ def is_screenshot(name: str) -> bool:
     return name.lower().startswith(("screenshot", "screen shot", "captura"))
 
 
+def find_files(folder: Path) -> list[Path]:
+    """Images and PDFs under folder, skipping hidden files and folders (.git, .venv…) and SKIP_DIRS."""
+    found = []
+    for root, dirs, names in os.walk(folder):
+        dirs[:] = [n for n in dirs if not n.startswith(".") and n not in SKIP_DIRS]
+        found += [Path(root, n) for n in names
+                  if not n.startswith(".") and Path(n).suffix.lower() in IMAGE_EXT | PDF_EXT]
+    return sorted(found)
+
+
+def settings() -> dict:
+    """How vectors are made. A previous index is only reused if these match."""
+    return {"model": MODEL_ID, "image_side": IMAGE_SIDE, "page_dpi": PAGE_DPI, "chunk": CHUNK, "overlap": OVERLAP}
+
+
+def fold(text: str) -> str:
+    """Lowercase, without accents: for exact matching."""
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
+
+
+def codes(query: str) -> list[str]:
+    """Words of the query that look like codes (invoice numbers, plates, IDs): 3+ characters, with a digit."""
+    words = re.findall(r"[a-z0-9]+(?:[-/.][a-z0-9]+)*", fold(query))
+    return [w for w in words if len(w) >= 3 and any(c.isdigit() for c in w)]
+
+
 class Index:
     """An indexed folder: items (a photo or a PDF page) and their vectors.
 
@@ -150,6 +183,7 @@ class Index:
         self.dir: Path | None = None
         self.items: list[dict] = []
         self.rows: list[dict] = []  # {"item": item id, "kind": "image"|"text", "text": chunk}
+        self.folded: list[str] = []  # fold() of each row's text, for exact code matching
         self.vectors = None
         self.stats: dict = {}
         self.progress: dict = {"active": False}
@@ -162,12 +196,37 @@ class Index:
         d = index_dir(folder)
         if not (d / "vectors.npy").exists():
             return False
-        data = json.loads((d / "index.json").read_text())
+        data = json.loads((d / "index.json").read_text(encoding="utf-8"))
         self.folder, self.dir = folder, d
         self.items, self.rows = data["items"], data["rows"]
+        self.folded = [fold(r.get("text", "")) for r in self.rows]
         self.stats = data.get("stats", {})
         self.vectors = np.load(d / "vectors.npy")
         return True
+
+    @staticmethod
+    def previous(d: Path) -> dict:
+        """The last index of this folder, by file: {(rel, size, mtime): [(item, [(row, vector)])]}.
+
+        Re-indexing reuses the vectors of files that haven't changed.
+        """
+        import numpy as np
+
+        try:
+            data = json.loads((d / "index.json").read_text(encoding="utf-8"))
+            vectors = np.load(d / "vectors.npy")
+        except (OSError, ValueError):
+            return {}
+        if data.get("settings") != settings():
+            return {}
+        rows_of: dict[int, list] = {}
+        for row, vector in zip(data["rows"], vectors):
+            rows_of.setdefault(row["item"], []).append((row, vector))
+        old: dict[tuple, list] = {}
+        for k, it in enumerate(data["items"]):
+            if "mtime" in it:
+                old.setdefault((it["rel"], it["size"], it["mtime"]), []).append((it, rows_of.get(k, [])))
+        return old
 
     def summary(self) -> dict | None:
         if self.folder is None:
@@ -195,12 +254,13 @@ class Index:
         }
         try:
             d = index_dir(folder)
-            thumbs = d / "thumbs"
-            thumbs.mkdir(parents=True, exist_ok=True)
-            files = sorted(
-                f for f in folder.rglob("*")
-                if f.is_file() and not f.name.startswith(".") and f.suffix.lower() in IMAGE_EXT | PDF_EXT
-            )
+            old = self.previous(d)
+            # New thumbnails go to a separate folder, swapped in at the end: the old
+            # ones are still needed to copy the thumbnails of unchanged files.
+            thumbs = d / "thumbs.new"
+            shutil.rmtree(thumbs, ignore_errors=True)
+            thumbs.mkdir(parents=True)
+            files = find_files(folder)
             images = [f for f in files if f.suffix.lower() in IMAGE_EXT]
             pdfs = [f for f in files if f.suffix.lower() in PDF_EXT]
             total_pages = 0
@@ -216,11 +276,36 @@ class Index:
             pending_images: list[tuple[int, str]] = []  # (item id, path of the downscaled copy)
             pending_texts: list[tuple[int, str]] = []   # (item id, text chunk)
 
+            reused_rows: list[dict] = []
+            reused_vectors: list = []
+
             def rel(f: Path) -> str:
                 return str(f.relative_to(folder))
 
+            def stamp(f: Path) -> dict:
+                st = f.stat()
+                return {"size": st.st_size, "mtime": st.st_mtime_ns}
+
+            def reuse(f: Path, s: dict) -> int:
+                """Takes the items of an unchanged file from the previous index. Returns how many."""
+                prev = old.get((rel(f), s["size"], s["mtime"]), [])
+                if not all((d / "thumbs" / it["thumb"]).exists() for it, _ in prev):
+                    return 0
+                for it, its_rows in prev:
+                    k = len(items)
+                    shutil.copyfile(d / "thumbs" / it["thumb"], thumbs / f"{k:05d}.jpg")
+                    items.append({**it, "path": str(f), "thumb": f"{k:05d}.jpg"})
+                    for row, vector in its_rows:
+                        reused_rows.append({**row, "item": k})
+                        reused_vectors.append(vector)
+                return len(prev)
+
             for f in images:
                 p["current"] = rel(f)
+                s = stamp(f)
+                if reuse(f, s):
+                    p["images"] += 1
+                    continue
                 k = len(items)
                 copy = thumbs / f"{k:05d}.jpg"
                 try:
@@ -234,12 +319,18 @@ class Index:
                     continue
                 items.append({"type": "screenshot" if is_screenshot(f.name) else "photo",
                               "path": str(f), "rel": rel(f), "name": f.name,
-                              "thumb": copy.name, "width": width, "height": height})
+                              "thumb": copy.name, "width": width, "height": height, **s})
                 pending_images.append((k, str(copy)))
                 p["images"] += 1
 
             for f in pdfs:
                 p["current"] = rel(f)
+                s = stamp(f)
+                pages = reuse(f, s)
+                if pages:
+                    p["pdfs"] += 1
+                    p["pages"] += pages
+                    continue
                 try:
                     doc = pymupdf.open(f)
                 except Exception as e:
@@ -256,7 +347,7 @@ class Index:
                         items.append({"type": "pdf", "path": str(f), "rel": rel(f), "name": f.name,
                                       "page": n, "pages": doc.page_count, "thumb": copy.name,
                                       "width": pix.width, "height": pix.height,
-                                      "has_text": len(text.strip()) > 25})
+                                      "has_text": len(text.strip()) > 25, **s})
                         pending_images.append((k, str(copy)))
                         for chunk in chunk_text(text):
                             pending_texts.append((k, chunk))
@@ -282,22 +373,30 @@ class Index:
                 rows += [{"item": k, "kind": "text", "text": t} for k, t in part]
                 p["done"] += len(part)
 
+            if reused_vectors:
+                blocks.append(np.array(reused_vectors))
+                rows += reused_rows
             vectors = np.vstack(blocks).astype("float32")
             peak = peak_ram_bytes()
             stats = {
                 "date": time.strftime("%Y-%m-%d %H:%M"),
                 "photos": sum(it["type"] == "photo" for it in items),
                 "screenshots": sum(it["type"] == "screenshot" for it in items),
-                "pdfs": p["pdfs"], "pages": p["pages"], "text_chunks": len(pending_texts),
+                "pdfs": p["pdfs"], "pages": p["pages"],
+                "text_chunks": sum(r["kind"] == "text" for r in rows),
+                "reused": len(items) - len(pending_images),
                 "vectors": int(vectors.shape[0]), "dimensions": int(vectors.shape[1]),
                 "seconds": round(time.perf_counter() - t0, 1), "device": model.device,
                 "peak_ram_gb": round(peak / 1e9, 1) if peak else None,
                 "machine": machine(),
             }
+            shutil.rmtree(d / "thumbs", ignore_errors=True)
+            thumbs.rename(d / "thumbs")
             np.save(d / "vectors.npy", vectors)
             (d / "index.json").write_text(json.dumps(
-                {"folder": str(folder), "items": items, "rows": rows, "stats": stats}, ensure_ascii=False))
-            (INDEXES / "last.txt").write_text(str(folder))
+                {"folder": str(folder), "settings": settings(), "items": items, "rows": rows, "stats": stats},
+                ensure_ascii=False), encoding="utf-8")
+            (INDEXES / "last.txt").write_text(str(folder), encoding="utf-8")
             self.load(folder)
             p.update(phase="Done", active=False, current="", done=p["total"])
             print(json.dumps(stats, ensure_ascii=False, indent=1))
@@ -307,12 +406,15 @@ class Index:
 
     # ---------------------------------------------------------- search
 
-    def rank(self, q, n: int, kind: str = "all", exclude: int | None = None) -> list[dict]:
+    def rank(self, q, n: int, kind: str = "all", exclude: int | None = None, text: str = "") -> list[dict]:
         """Ranks items by similarity to the query vector q.
 
         Text↔text and text↔image similarities live on different scales (the
         "modality gap"), so each modality is standardised on its own (z-score)
         before mixing them. Each item keeps its best-scoring row.
+
+        Embeddings are vague about exact codes (invoice numbers, plates, IDs), so
+        text chunks containing a code from the query `text` verbatim get CODE_BOOST.
         """
         import numpy as np
 
@@ -323,6 +425,12 @@ class Index:
             if mask.any():
                 v = sims[mask]
                 z[mask] = (v - v.mean()) / (v.std() + 1e-6)
+        for code in codes(text):
+            pattern = re.compile(rf"(?<![a-z0-9]){re.escape(code)}(?![a-z0-9])")
+            hits = [i for i, t in enumerate(self.folded) if t and pattern.search(t)]
+            # A code found nearly everywhere ("2026") is a year or a date, not an identifier.
+            if len(hits) <= max(3, int(is_text.sum()) // 20):
+                z[hits] += CODE_BOOST
 
         best: dict[int, tuple[float, int]] = {}
         best_text: dict[int, int] = {}  # most similar text chunk of each page, for the snippet
@@ -474,7 +582,24 @@ def make_handler(model: Model, index: Index):
                 return False
             return True
 
+        def _local(self) -> bool:
+            """Only this app's own page may call the API.
+
+            Binding to 127.0.0.1 keeps other machines out, but not other websites open in
+            the same browser: they could POST /index or /open, or read results through DNS
+            rebinding. Those requests carry a foreign Host or Origin header.
+            """
+            port = self.server.server_address[1]
+            host = self.headers.get("Host", "")
+            origin = self.headers.get("Origin")
+            if host in (f"127.0.0.1:{port}", f"localhost:{port}") and origin in (None, f"http://{host}"):
+                return True
+            self._json({"error": "forbidden"}, 403)
+            return False
+
         def do_GET(self):
+            if not self._local():
+                return
             u = urlparse(self.path)
             q = {k: v[0] for k, v in parse_qs(u.query).items()}
             try:
@@ -501,7 +626,7 @@ def make_handler(model: Model, index: Index):
                         return
                     t0 = time.perf_counter()
                     v = model.embed_query(q.get("q", ""))
-                    res = index.rank(v, int(q.get("n", 24)), q.get("type", "all"))
+                    res = index.rank(v, int(q.get("n", 24)), q.get("type", "all"), text=q.get("q", ""))
                     return self._json({"ms": round((time.perf_counter() - t0) * 1000), "results": res})
                 if u.path == "/similar":
                     if not self._can_search():
@@ -515,6 +640,8 @@ def make_handler(model: Model, index: Index):
                 self._json({"error": str(e)}, 400)
 
         def do_POST(self):
+            if not self._local():
+                return
             u = urlparse(self.path)
             try:
                 if u.path == "/pick-folder":
@@ -530,7 +657,7 @@ def make_handler(model: Model, index: Index):
                     if index.progress.get("active"):
                         return self._json({"error": "Already indexing"}, 409)
                     if not data.get("rebuild") and index.load(folder):
-                        (INDEXES / "last.txt").write_text(str(folder))
+                        (INDEXES / "last.txt").write_text(str(folder), encoding="utf-8")
                         return self._json({"ok": True, "already_indexed": True})
                     if not model.ready():
                         return self._json({"error": "The model is still loading"}, 503)
@@ -546,14 +673,17 @@ def make_handler(model: Model, index: Index):
                     t0 = time.perf_counter()
                     with tempfile.NamedTemporaryFile(suffix=".img", delete=False) as f:
                         f.write(self._body())
-                    with Image.open(f.name) as im:
-                        im = ImageOps.exif_transpose(im).convert("RGB")
-                        im.thumbnail((IMAGE_SIDE, IMAGE_SIDE))
-                        jpg = f.name + ".jpg"
-                        im.save(jpg, "JPEG", quality=88)
-                    v = model.embed_images([jpg])[0]
-                    os.unlink(f.name)
-                    os.unlink(jpg)
+                    jpg = f.name + ".jpg"
+                    try:
+                        with Image.open(f.name) as im:
+                            im = ImageOps.exif_transpose(im).convert("RGB")
+                            im.thumbnail((IMAGE_SIDE, IMAGE_SIDE))
+                            im.save(jpg, "JPEG", quality=88)
+                        v = model.embed_images([jpg])[0]
+                    finally:  # also when the upload isn't an image
+                        for tmp in (f.name, jpg):
+                            if os.path.exists(tmp):
+                                os.unlink(tmp)
                     res = index.rank(v, 24, parse_qs(u.query).get("type", ["all"])[0])
                     return self._json({"ms": round((time.perf_counter() - t0) * 1000), "results": res})
                 if u.path in ("/open", "/reveal"):
@@ -598,7 +728,7 @@ def main() -> None:
     index = Index()
     last = INDEXES / "last.txt"
     if last.exists():
-        index.load(Path(last.read_text().strip()))
+        index.load(Path(last.read_text(encoding="utf-8").strip()))
 
     # Bound to 127.0.0.1 only: not reachable from other machines on the network.
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(model, index))
